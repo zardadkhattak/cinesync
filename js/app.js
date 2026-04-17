@@ -28,7 +28,7 @@ document.getElementById('btn-dismiss-install')?.addEventListener('click', () => 
 
 // ─── SERVICE WORKER ───────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/movieswatch/sw.js').catch(() => {});
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
 // ─── ROOM CODE GENERATOR ──────────────────────────────────────────
