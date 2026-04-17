@@ -1,10 +1,10 @@
 const CACHE_NAME = 'cinesync-v1';
 const ASSETS = [
-  '/movieswatch/',
-  '/movieswatch/index.html',
-  '/movieswatch/css/style.css',
-  '/movieswatch/js/app.js',
-  '/movieswatch/manifest.json'
+  './',
+  './index.html',
+  './css/style.css',
+  './js/app.js',
+  './manifest.json'
 ];
 
 self.addEventListener('install', e => {
