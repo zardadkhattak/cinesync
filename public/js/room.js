@@ -3,22 +3,12 @@
    Handles: Socket.io connection, WebRTC video chat, video sync
    ═══════════════════════════════════════════════════════════════════ */
 
-// ─── CONFIG ──────────────────────────────────────────────────────
-const SERVER_URL = sessionStorage.getItem('cs_server') || window.location.origin;
 const ROOM_CODE  = sessionStorage.getItem('cs_room') || new URLSearchParams(location.search).get('room') || '';
 const MY_ROLE    = sessionStorage.getItem('cs_role') || 'guest';
 
-const STUN_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
-  ]
-};
-
 // ─── STATE ───────────────────────────────────────────────────────
-let socket           = null;
-let peerConnection   = null;
+let peer             = null;
+let dataChannel      = null;
 let localStream      = null;
 let isHost           = MY_ROLE === 'host';
 let isConnected      = false;
@@ -109,6 +99,12 @@ function setPlayPauseUI(playing) {
   iconPause.style.display = playing ? 'block' : 'none';
 }
 
+function broadcastData(type, payload) {
+  if (dataChannel && dataChannel.open) {
+    dataChannel.send({ type, ...payload });
+  }
+}
+
 // ─── ROOM CODE DISPLAY ────────────────────────────────────────────
 if (ROOM_CODE) {
   roomCodeLabel.textContent = ROOM_CODE;
@@ -119,91 +115,151 @@ if (ROOM_CODE) {
   window.location.href = 'index.html';
 }
 
-// ─── SOCKET.IO CONNECTION ─────────────────────────────────────────
-statusText.textContent = 'Connecting to server...';
+// ─── PEERJS CONNECTION ────────────────────────────────────────────
+// PeerJS uses their free public cloud matching server automatically
+statusText.textContent = 'Connecting to peer cloud...';
+const myPeerId = `cinesync-${ROOM_CODE}-${MY_ROLE}`;
+const hostPeerId = `cinesync-${ROOM_CODE}-host`;
 
-try {
-  socket = io(SERVER_URL, { transports: ['websocket', 'polling'] });
-} catch (e) {
-  statusText.textContent = 'Cannot connect. Make sure the server is running.';
-}
+peer = new Peer(myPeerId);
 
-socket.on('connect', () => {
-  statusText.textContent = 'Joining room...';
-  socket.emit('join-room', ROOM_CODE, (res) => {
-    if (!res.success) {
-      statusText.textContent = res.error || 'Could not join room.';
-      return;
+peer.on('open', async (id) => {
+  statusText.textContent = isHost ? 'Waiting for partner...' : 'Joining host...';
+  setSyncStatus('waiting', 'Waiting...');
+  await startCamera();
+
+  if (!isHost) {
+    // Guest connects to Host
+    statusText.textContent = 'Connecting to host...';
+    dataChannel = peer.connect(hostPeerId);
+    setupDataChannel(dataChannel);
+
+    // Call host with my camera
+    if (localStream) {
+      const call = peer.call(hostPeerId, localStream);
+      setupCall(call);
     }
-
-    isHost = res.isHost;
-    setSyncStatus('waiting', 'Waiting...');
-    startCamera();
-
-    if (res.userCount === 2) {
-      // Both users already in room
-      statusText.textContent = 'Partner found! Setting up...';
-      if (isHost) initPeerConnection(true);
-    } else {
-      statusText.textContent = 'Waiting for partner to join...';
-    }
-  });
-});
-
-socket.on('connect_error', () => {
-  statusText.textContent = '⚠️ Cannot reach server. Is it running?';
-});
-
-socket.on('disconnect', () => {
-  setSyncStatus('error', 'Disconnected');
-  showToast('⚠️ Disconnected from server');
-});
-
-// ─── PEER EVENTS FROM SERVER ──────────────────────────────────────
-socket.on('peer-joined', () => {
-  showToast('👋 Partner joined!');
-  setSyncStatus('waiting', 'Connecting...');
-  statusText.textContent = 'Partner found! Setting up video call...';
-  if (isHost) initPeerConnection(true);
-
-  // Re-broadcast current video to the new partner so late joiners get it
-  if (currentVideo) {
-    setTimeout(() => {
-      socket.emit('video-load', currentVideo);
-    }, 1500); // small delay to let partner's socket settle
   }
 });
 
-socket.on('peer-left', () => {
+peer.on('error', (err) => {
+  console.error('Peer error:', err);
+  setSyncStatus('error', 'Error');
+  statusText.textContent = 'Connection error. Refresh to try again.';
+  showToast('⚠️ Connection error');
+});
+
+// Host receives incoming connections
+peer.on('connection', (conn) => {
+  if (isHost) {
+    dataChannel = conn;
+    setupDataChannel(dataChannel);
+    showToast('👋 Partner joined!');
+    setSyncStatus('waiting', 'Connecting...');
+    statusText.textContent = 'Partner found! Setting up video call...';
+    
+    // Re-broadcast current video to late joiners
+    if (currentVideo) {
+      setTimeout(() => broadcastData('video-load', currentVideo), 1500);
+    }
+  }
+});
+
+// Host receives incoming video call
+peer.on('call', (call) => {
+  call.answer(localStream); // Answer with my stream
+  setupCall(call);
+});
+
+// ─── SETUP CALL (VIDEO/AUDIO STREAM) ─────────────────────────────────
+function setupCall(call) {
+  call.on('stream', (remoteStream) => {
+    remoteVideo.srcObject = remoteStream;
+    partnerBubble.classList.add('cam-online');
+    partnerOffline.style.display = 'none';
+    isConnected = true;
+    setSyncStatus('synced', 'Connected');
+    hideStatusOverlay();
+    showToast('✅ Connected to partner!');
+  });
+
+  call.on('close', () => {
+    handlePartnerLeft();
+  });
+}
+
+// ─── SETUP DATA CHANNEL (SYNC / CHAT) ─────────────────────────────────
+function setupDataChannel(conn) {
+  conn.on('open', () => {
+    console.log('Data channel open');
+    if (!isHost) {
+      showToast('✅ Joined room!');
+    }
+  });
+
+  conn.on('data', (data) => {
+    if (!data || !data.type) return;
+
+    switch (data.type) {
+      case 'chat-message':
+        addChatMessage(data.text, false, data.time, data.sender);
+        if (!chatOpen) {
+          chatUnread.style.display = 'flex';
+          showToast(`💬 ${data.sender}: ${data.text.substring(0, 40)}`);
+        }
+        break;
+
+      case 'video-load':
+        loadVideo(data.url, data.videoType, false);
+        showToast('▶️ Partner loaded a video — loading for you too!');
+        break;
+
+      case 'video-play':
+        if (videoMode === 'youtube' && (!ytPlayer || !ytPlayerReady)) {
+          pendingPlay = { action: 'play', currentTime: data.currentTime };
+          setPlayPauseUI(true);
+        } else {
+          isSyncingLocally = true;
+          seekTo(data.currentTime);
+          playVideo();
+          setTimeout(() => isSyncingLocally = false, 600);
+        }
+        break;
+
+      case 'video-pause':
+        if (videoMode === 'youtube' && (!ytPlayer || !ytPlayerReady)) {
+          pendingPlay = { action: 'pause', currentTime: data.currentTime };
+          setPlayPauseUI(false);
+        } else {
+          isSyncingLocally = true;
+          seekTo(data.currentTime);
+          pauseVideo();
+          setTimeout(() => isSyncingLocally = false, 600);
+        }
+        break;
+
+      case 'video-seek':
+        isSyncingLocally = true;
+        seekTo(data.currentTime);
+        setTimeout(() => isSyncingLocally = false, 500);
+        break;
+    }
+  });
+
+  conn.on('close', () => {
+    handlePartnerLeft();
+  });
+}
+
+function handlePartnerLeft() {
   showToast('😔 Partner left the room');
   setSyncStatus('error', 'Alone');
-  if (peerConnection) { peerConnection.close(); peerConnection = null; }
   remoteVideo.srcObject = null;
   partnerBubble.classList.remove('cam-online');
   partnerOffline.style.display = 'flex';
   isConnected = false;
-});
-
-// ─── WEBRTC SIGNALING ─────────────────────────────────────────────
-socket.on('webrtc-offer', async ({ sdp }) => {
-  if (!peerConnection) initPeerConnection(false);
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-  socket.emit('webrtc-answer', { sdp: peerConnection.localDescription });
-});
-
-socket.on('webrtc-answer', async ({ sdp }) => {
-  if (peerConnection) {
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-  }
-});
-
-socket.on('webrtc-ice', async ({ candidate }) => {
-  if (peerConnection && candidate) {
-    try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
-  }
-});
+  dataChannel = null;
+}
 
 // ─── CAMERA / MIC ─────────────────────────────────────────────────
 async function startCamera() {
@@ -221,94 +277,6 @@ async function startCamera() {
   }
 }
 
-// ─── PEER CONNECTION ──────────────────────────────────────────────
-function initPeerConnection(createOffer) {
-  if (peerConnection) { peerConnection.close(); }
-
-  peerConnection = new RTCPeerConnection(STUN_SERVERS);
-
-  // Add local tracks
-  if (localStream) {
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-  }
-
-  // Receive remote stream
-  peerConnection.ontrack = (event) => {
-    if (event.streams && event.streams[0]) {
-      remoteVideo.srcObject = event.streams[0];
-      partnerBubble.classList.add('cam-online');
-      partnerOffline.style.display = 'none';
-      isConnected = true;
-      setSyncStatus('synced', 'Connected');
-      hideStatusOverlay();
-      showToast('✅ Connected to partner!');
-    }
-  };
-
-  // ICE candidates
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit('webrtc-ice', { candidate: event.candidate });
-    }
-  };
-
-  peerConnection.onconnectionstatechange = () => {
-    const state = peerConnection.connectionState;
-    if (state === 'connected') {
-      setSyncStatus('synced', 'In Sync');
-      hideStatusOverlay();
-    } else if (state === 'failed' || state === 'disconnected') {
-      setSyncStatus('error', 'Dropped');
-      showToast('⚠️ Video call dropped');
-    }
-  };
-
-  if (createOffer) {
-    peerConnection.createOffer()
-      .then(offer => peerConnection.setLocalDescription(offer))
-      .then(() => socket.emit('webrtc-offer', { sdp: peerConnection.localDescription }))
-      .catch(console.error);
-  }
-}
-
-// ─── VIDEO SYNC — RECEIVE ─────────────────────────────────────────
-socket.on('video-load', ({ url, type }) => {
-  loadVideo(url, type, false);
-  showToast('▶️ Partner loaded a video — loading for you too!');
-});
-
-socket.on('video-play', ({ currentTime }) => {
-  // If YouTube player isn't ready yet, queue the play command
-  if (videoMode === 'youtube' && (!ytPlayer || !ytPlayerReady)) {
-    pendingPlay = { action: 'play', currentTime };
-    setPlayPauseUI(true); // update UI optimistically
-    return;
-  }
-  isSyncingLocally = true;
-  seekTo(currentTime);
-  playVideo();
-  setTimeout(() => isSyncingLocally = false, 600);
-});
-
-socket.on('video-pause', ({ currentTime }) => {
-  // If YouTube player isn't ready yet, queue the pause command
-  if (videoMode === 'youtube' && (!ytPlayer || !ytPlayerReady)) {
-    pendingPlay = { action: 'pause', currentTime };
-    setPlayPauseUI(false);
-    return;
-  }
-  isSyncingLocally = true;
-  seekTo(currentTime);
-  pauseVideo();
-  setTimeout(() => isSyncingLocally = false, 600);
-});
-
-socket.on('video-seek', ({ currentTime }) => {
-  isSyncingLocally = true;
-  seekTo(currentTime);
-  setTimeout(() => isSyncingLocally = false, 500);
-});
-
 // ─── VIDEO LOADING ────────────────────────────────────────────────
 function extractYouTubeId(url) {
   const patterns = [
@@ -325,7 +293,7 @@ function extractYouTubeId(url) {
 }
 
 function loadVideo(url, type, emit = true) {
-  if (emit) socket.emit('video-load', { url, type });
+  if (emit) broadcastData('video-load', { url, videoType: type });
 
   // Track current video for re-broadcasting to late joiners
   currentVideo = { url, type };
@@ -446,11 +414,11 @@ function onYTStateChange(event) {
 
   if (state === YT.PlayerState.PLAYING) {
     setPlayPauseUI(true);
-    socket.emit('video-play', { currentTime: ytPlayer.getCurrentTime() });
+    broadcastData('video-play', { currentTime: ytPlayer.getCurrentTime() });
     setSyncStatus('synced', 'In Sync');
   } else if (state === YT.PlayerState.PAUSED) {
     setPlayPauseUI(false);
-    socket.emit('video-pause', { currentTime: ytPlayer.getCurrentTime() });
+    broadcastData('video-pause', { currentTime: ytPlayer.getCurrentTime() });
   }
 }
 
@@ -459,18 +427,18 @@ function setupMp4Events() {
   mp4Player.onplay = () => {
     if (isSyncingLocally) return;
     setPlayPauseUI(true);
-    socket.emit('video-play', { currentTime: mp4Player.currentTime });
+    broadcastData('video-play', { currentTime: mp4Player.currentTime });
   };
 
   mp4Player.onpause = () => {
     if (isSyncingLocally) return;
     setPlayPauseUI(false);
-    socket.emit('video-pause', { currentTime: mp4Player.currentTime });
+    broadcastData('video-pause', { currentTime: mp4Player.currentTime });
   };
 
   mp4Player.onseeked = () => {
     if (isSyncingLocally) return;
-    socket.emit('video-seek', { currentTime: mp4Player.currentTime });
+    broadcastData('video-seek', { currentTime: mp4Player.currentTime });
   };
 
   mp4Player.ontimeupdate = updateSeekBar;
@@ -568,7 +536,7 @@ seekInput.addEventListener('input', () => {
 seekInput.addEventListener('change', () => {
   const t = parseFloat(seekInput.value);
   seekTo(t);
-  socket.emit('video-seek', { currentTime: t });
+  broadcastData('video-seek', { currentTime: t });
   isSeeking = false;
 });
 
@@ -577,11 +545,11 @@ btnPlayPause.addEventListener('click', () => {
   if (!videoMode) { showToast('Load a video first 📎'); return; }
   if (isPlaying()) {
     pauseVideo();
-    socket.emit('video-pause', { currentTime: getCurrentTime() });
+    broadcastData('video-pause', { currentTime: getCurrentTime() });
     setPlayPauseUI(false);
   } else {
     playVideo();
-    socket.emit('video-play', { currentTime: getCurrentTime() });
+    broadcastData('video-play', { currentTime: getCurrentTime() });
     setPlayPauseUI(true);
   }
 });
@@ -704,20 +672,14 @@ function sendChatMessage() {
   const text = chatInput.value.trim();
   if (!text) return;
   addChatMessage(text, true);
-  socket.emit('chat-message', { text, sender: 'Partner' });
+  broadcastData('chat-message', { text, sender: 'Partner' });
   chatInput.value = '';
 }
 
 btnChatSend.addEventListener('click', sendChatMessage);
 chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage(); });
 
-socket.on('chat-message', ({ text, sender, time }) => {
-  addChatMessage(text, false, time, sender);
-  if (!chatOpen) {
-    chatUnread.style.display = 'flex';
-    showToast(`💬 ${sender}: ${text.substring(0, 40)}`);
-  }
-});
+// socket.on('chat-message') is handled in setupDataChannel
 
 // ─── READY CHECK ──────────────────────────────────────────────────
 // If the user lands directly on room.html without going through index.html
