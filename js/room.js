@@ -296,7 +296,7 @@ function loadVideo(url, type, emit = true) {
   if (emit) broadcastData('video-load', { url, videoType: type });
 
   // Track current video for re-broadcasting to late joiners
-  currentVideo = { url, type };
+  currentVideo = { url, videoType: type };
 
   videoEmpty.style.display = 'none';
 
