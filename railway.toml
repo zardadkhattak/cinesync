@@ -1,0 +1,11 @@
+# CineSync — Railway Deployment
+
+This file tells Railway how to deploy the app.
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node server.js"
+healthcheckPath = "/"
+restartPolicyType = "on_failure"

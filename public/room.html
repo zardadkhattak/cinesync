@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0d0d1a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>CineSync — Watch Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/room.css" />
+</head>
+<body>
+
+  <!-- ── HEADER BAR ─────────────────────────────────────────── -->
+  <header class="room-header" id="room-header">
+    <a href="index.html" class="back-btn" title="Leave room">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+    </a>
+    <div class="header-center">
+      <span class="header-logo">🎬 CineSync</span>
+      <div class="room-code-badge" id="header-room-code">
+        <span id="room-code-label">------</span>
+        <button class="copy-btn-sm" id="btn-copy-room" title="Copy room code">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="sync-badge" id="sync-badge">
+        <span class="sync-dot"></span>
+        <span id="sync-label">Waiting</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── VIDEO AREA ──────────────────────────────────────────── -->
+  <section class="video-section" id="video-section">
+
+    <!-- YouTube Player (shown when YouTube mode) -->
+    <div class="yt-wrapper" id="yt-wrapper" style="display:none;">
+      <div id="yt-player"></div>
+    </div>
+
+    <!-- HTML5 Video Player (shown when direct URL mode) -->
+    <div class="mp4-wrapper" id="mp4-wrapper" style="display:none;">
+      <video id="mp4-player" playsinline webkit-playsinline preload="metadata">
+        Your browser does not support video playback.
+      </video>
+    </div>
+
+    <!-- Empty state -->
+    <div class="video-empty" id="video-empty">
+      <div class="empty-icon">🎬</div>
+      <h2>No video loaded</h2>
+      <p>Tap the 📎 button below to load a YouTube video or paste a video URL</p>
+      <button class="btn-load-empty" id="btn-load-empty">Load a Video</button>
+    </div>
+
+    <!-- Webcam Bubbles -->
+    <div class="webcam-bubbles">
+      <!-- Partner's webcam (top-left) -->
+      <div class="webcam-bubble bubble-partner" id="bubble-partner">
+        <video id="remote-video" autoplay playsinline webkit-playsinline></video>
+        <div class="cam-label">Partner</div>
+        <div class="cam-offline" id="partner-offline">
+          <span>👤</span>
+          <p>Waiting for partner...</p>
+        </div>
+      </div>
+      <!-- Own webcam (smaller, bottom-left) -->
+      <div class="webcam-bubble bubble-self" id="bubble-self">
+        <video id="local-video" autoplay playsinline webkit-playsinline muted></video>
+        <div class="cam-label">You</div>
+        <div class="cam-offline" id="self-offline">
+          <span>📷</span>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ── PLAYBACK CONTROLS ───────────────────────────────────── -->
+  <div class="controls-bar" id="controls-bar">
+    <!-- Seek Bar -->
+    <div class="seek-row">
+      <span class="time-label" id="time-current">0:00</span>
+      <div class="seek-track" id="seek-track">
+        <div class="seek-fill" id="seek-fill"></div>
+        <input type="range" class="seek-input" id="seek-input" min="0" max="100" value="0" step="0.1" />
+      </div>
+      <span class="time-label" id="time-duration">0:00</span>
+    </div>
+
+    <!-- Button Row -->
+    <div class="controls-row">
+      <!-- Play/Pause -->
+      <button class="ctrl-btn ctrl-play" id="btn-play-pause" title="Play/Pause">
+        <svg id="icon-play" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5,3 19,12 5,21"/>
+        </svg>
+        <svg id="icon-pause" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+          <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+        </svg>
+      </button>
+
+      <!-- Volume -->
+      <button class="ctrl-btn" id="btn-mute" title="Mute/Unmute">
+        <svg id="icon-vol" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+        </svg>
+      </button>
+
+      <div class="ctrl-spacer"></div>
+
+      <!-- Load Video -->
+      <button class="ctrl-btn ctrl-load" id="btn-load-video" title="Load video">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+        <span>Load</span>
+      </button>
+
+      <!-- Chat Toggle -->
+      <button class="ctrl-btn ctrl-chat" id="btn-toggle-chat" title="Chat">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span class="chat-unread" id="chat-unread" style="display:none;">1</span>
+      </button>
+
+      <!-- Cam Toggle -->
+      <button class="ctrl-btn ctrl-cam" id="btn-toggle-cam" title="Toggle camera">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="23 7 16 12 23 17 23 7"/>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+        <span>Cam</span>
+      </button>
+
+      <!-- Mic Toggle -->
+      <button class="ctrl-btn ctrl-cam" id="btn-toggle-mic" title="Toggle microphone">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+        </svg>
+        <span>Mic</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── LOAD VIDEO MODAL ────────────────────────────────────── -->
+  <div class="modal-overlay" id="modal-overlay" style="display:none;">
+    <div class="modal" id="modal-load">
+      <div class="modal-header">
+        <h3>Load Video</h3>
+        <button class="modal-close" id="btn-modal-close">✕</button>
+      </div>
+
+      <!-- Tab switcher -->
+      <div class="modal-tabs">
+        <button class="tab-btn active" id="tab-yt" data-tab="yt">
+          <span>▶️</span> YouTube
+        </button>
+        <button class="tab-btn" id="tab-url" data-tab="url">
+          <span>🔗</span> Direct URL
+        </button>
+      </div>
+
+      <!-- YouTube tab -->
+      <div class="tab-content" id="tab-content-yt">
+        <p class="modal-hint">Paste a YouTube video link:</p>
+        <input type="url" id="input-yt-url" placeholder="https://youtube.com/watch?v=..." class="modal-input" inputmode="url" />
+        <div class="yt-examples">
+          <p class="examples-label">💡 Supported formats:</p>
+          <code>youtube.com/watch?v=...</code>
+          <code>youtu.be/...</code>
+        </div>
+      </div>
+
+      <!-- Direct URL tab -->
+      <div class="tab-content" id="tab-content-url" style="display:none;">
+        <p class="modal-hint">Paste a direct video or audio URL:</p>
+        <input type="url" id="input-direct-url" placeholder="https://example.com/video.mp4" class="modal-input" inputmode="url" />
+        <p class="modal-hint" style="margin-top:8px;font-size:0.75rem;">Supported: .mp4, .webm, .ogg, .m3u8</p>
+      </div>
+
+      <button class="btn btn-primary btn-load-confirm" id="btn-load-confirm">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        <span>Load &amp; Sync</span>
+      </button>
+
+      <p class="modal-sync-note">📡 Both partners will load the same video automatically</p>
+    </div>
+  </div>
+
+  <!-- ── CHAT PANEL ──────────────────────────────────────────── -->
+  <div class="chat-panel" id="chat-panel">
+    <div class="chat-header">
+      <h3>💬 Chat</h3>
+      <button class="chat-close" id="btn-chat-close">✕</button>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      <div class="chat-system-msg">Room joined. Chat with your partner! 👋</div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200" />
+      <button class="chat-send-btn" id="btn-chat-send">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── CONNECTION STATUS OVERLAY ──────────────────────────── -->
+  <div class="status-overlay" id="status-overlay">
+    <div class="status-box">
+      <div class="status-spinner"></div>
+      <p id="status-text">Connecting to server...</p>
+    </div>
+  </div>
+
+  <!-- ── TOAST NOTIFICATION ─────────────────────────────────── -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Socket.io from server -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="js/room.js"></script>
+</body>
+</html>
