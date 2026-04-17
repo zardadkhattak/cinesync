@@ -23,6 +23,7 @@ let ytPlayerReady    = false;  // YT.Player instance is ready to receive command
 let pendingVideoLoad = null;   // { url, type } queued before YT was ready
 let pendingPlay      = null;   // currentTime to seek+play when player becomes ready
 let currentVideo     = null;   // { url, type } track what's loaded (for re-broadcasting)
+let seekUpdater      = null;   // global seek bar interval reference
 
 // ─── DOM REFS ─────────────────────────────────────────────────────
 const statusOverlay  = document.getElementById('status-overlay');
@@ -118,6 +119,7 @@ if (ROOM_CODE) {
 // ─── PEERJS CONNECTION ────────────────────────────────────────────
 // PeerJS uses their free public cloud matching server automatically
 statusText.textContent = 'Connecting to peer cloud...';
+const myPeerId = `cinesync-${ROOM_CODE}-${MY_ROLE}`;
 const STUN_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -509,8 +511,6 @@ function isPlaying() {
 }
 
 // ─── SEEK BAR ─────────────────────────────────────────────────────
-let seekUpdater = null;
-
 function startSeekBarUpdater() {
   if (seekUpdater) clearInterval(seekUpdater);
   seekUpdater = setInterval(updateSeekBar, 500);
