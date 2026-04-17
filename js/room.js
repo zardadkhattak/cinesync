@@ -118,10 +118,19 @@ if (ROOM_CODE) {
 // ─── PEERJS CONNECTION ────────────────────────────────────────────
 // PeerJS uses their free public cloud matching server automatically
 statusText.textContent = 'Connecting to peer cloud...';
-const myPeerId = `cinesync-${ROOM_CODE}-${MY_ROLE}`;
-const hostPeerId = `cinesync-${ROOM_CODE}-host`;
+const STUN_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
+  ]
+};
 
-peer = new Peer(myPeerId);
+peer = new Peer(myPeerId, {
+  config: STUN_SERVERS
+});
+const hostPeerId = `cinesync-${ROOM_CODE}-host`;
 
 peer.on('open', async (id) => {
   statusText.textContent = isHost ? 'Waiting for partner...' : 'Joining host...';
