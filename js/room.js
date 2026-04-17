@@ -154,10 +154,23 @@ peer.on('open', async (id) => {
 });
 
 peer.on('error', (err) => {
-  console.error('Peer error:', err);
+  console.error('Peer error type:', err.type);
   setSyncStatus('error', 'Error');
-  statusText.textContent = 'Connection error. Refresh to try again.';
-  showToast('⚠️ Connection error');
+
+  if (err.type === 'peer-unavailable') {
+    statusText.textContent = 'Host not found. Retrying in 3s...';
+    if (!isHost) { 
+      setTimeout(() => location.reload(), 3000); 
+    }
+  } else if (err.type === 'id-taken') {
+    statusText.textContent = '⚠️ This room is already in use. Try a different code.';
+  } else if (err.type === 'network') {
+    statusText.textContent = '⚠️ Network error. Check your internet connection.';
+  } else {
+    statusText.textContent = `⚠️ Connection error: ${err.type}. Refresh page.`;
+  }
+  
+  showToast(`⚠️ Error: ${err.type}`);
 });
 
 // Host receives incoming connections
